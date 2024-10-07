@@ -21,7 +21,6 @@ import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-alpine.css";
 import OpenAI from "openai";
 import { z } from "zod";
-// Import shadcn Popover components
 import {
   Popover,
   PopoverTrigger,
@@ -30,13 +29,17 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { zodResponseFormat } from "openai/helpers/zod";
-import FirecrawlApp, {
-  CrawlParams,
-  CrawlStatusResponse,
-} from "@mendable/firecrawl-js";
-
-// Import Heroicons for icons
+import FirecrawlApp from "@mendable/firecrawl-js";
 import { PlayIcon } from "@heroicons/react/24/outline";
+
+// **Import recharts components**
+import {
+  ResponsiveContainer,
+  FunnelChart,
+  Funnel,
+  LabelList,
+  Tooltip,
+} from "recharts";
 
 // Type definitions
 type CompanyData = {
@@ -58,19 +61,20 @@ const originalData: CompanyData[] = [
   {
     name: "OpenAI",
     website: "https://www.openai.com/",
-    originalContent: "This is the original output for Pied Piper.",
+    originalContent: "This is the original output for OpenAI.",
     impressions: 249,
     engagements: 88,
     intentScore: 93,
     sessions: 166,
     engagementRate: 26,
-    sessionDuration: 59, // Converted to seconds
+    sessionDuration: 59,
     conversions: 15,
     bounceRate: 45,
     revenue: 15000,
   },
   {
-    name: "Github",
+    name: "Hooli",
+    website: "https://www.hooli.com/",
     originalContent: "This is the original output for Hooli.",
     impressions: 500,
     engagements: 200,
@@ -84,6 +88,7 @@ const originalData: CompanyData[] = [
   },
   {
     name: "Aviato",
+    website: "https://www.aviato.com/",
     originalContent: "This is the original output for Aviato.",
     impressions: 150,
     engagements: 70,
@@ -95,13 +100,12 @@ const originalData: CompanyData[] = [
     bounceRate: 40,
     revenue: 20000,
   },
-  // Add more companies as needed
 ];
 
 // List of companies
 const companies = originalData.map((company) => company.name);
 
-// List of all available metrics (if needed elsewhere)
+// List of all available metrics
 const allMetrics = [
   "impressions",
   "engagements",
@@ -115,26 +119,11 @@ const allMetrics = [
 
 // List of user acquisition events
 const companyEventNames = [
-  "Sign Up",
-  "Sign In",
-  "Purchase",
-  "Add to Cart",
-  "Checkout",
-  "Request Demo",
-  "Start Trial",
-  "Subscribe",
-  "Unsubscribe",
-  "Upgrade Plan",
-  "Downgrade Plan",
-  "Contact Support",
-  "Submit Feedback",
-  "Refer Friend",
-  "Download",
-  "Install Extension",
-  "Complete Onboarding",
-  "Abandon Cart",
-  "View Pricing",
   "Visit Landing Page",
+  "Sign Up",
+  "Activate Account",
+  "Start Trial",
+  "Purchase",
 ];
 
 // Generating synthetic events with counts
@@ -142,35 +131,57 @@ const generateCompanyEvents = () => {
   const events: CompanyDataEvent[] = [];
 
   companies.forEach((company) => {
-    for (let i = 0; i < 10; i++) {
-      // Randomly select an event name
-      const eventName =
-        companyEventNames[Math.floor(Math.random() * companyEventNames.length)];
-
-      // Generate a random count for the event
-      const count = Math.floor(Math.random() * 20) + 1; // Random count between 1 and 20
-
-      // Create the event description
+    let stage = 1;
+    companyEventNames.forEach((eventName) => {
+      const count = Math.floor(Math.random() * 500) + 100 - stage * 50;
       const description = `${count} ${eventName}${count > 1 ? "s" : ""}`;
-
-      // Create the event object
       const event: CompanyDataEvent = {
         companyName: company,
         metric: eventName,
-        value: count,
+        value: count > 0 ? count : 50,
         description,
       };
-
-      // Add to the dataset
       events.push(event);
-    }
+      stage++;
+    });
   });
 
   return events;
 };
 
 // Synthetic dataset with updated events
-const companyEvents = generateCompanyEvents();
+let companyEvents = generateCompanyEvents();
+
+// **FunnelChart component**
+function CompanyFunnelChart({
+  companyName,
+  events,
+}: {
+  companyName: string;
+  events: CompanyDataEvent[];
+}) {
+  // Prepare data for the funnel chart
+  const data = events.map((event) => ({
+    name: event.metric,
+    value: event.value,
+  }));
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <FunnelChart>
+        <Tooltip />
+        <Funnel dataKey="value" data={data} isAnimationActive>
+          <LabelList
+            position="right"
+            fill="#000"
+            stroke="none"
+            dataKey="name"
+          />
+        </Funnel>
+      </FunnelChart>
+    </ResponsiveContainer>
+  );
+}
 
 export function ChartShowcase() {
   const [experiments, setExperiments] = useState([
@@ -221,7 +232,6 @@ export function ChartShowcase() {
     }
 
     // Parse the custom prompt to identify the metrics to improve
-    // For simplicity, we'll assume the user mentions metric names in the prompt
     const lowerCasePrompt = customPrompt.toLowerCase();
     const metricsToImprove = allMetrics.filter((metric) =>
       lowerCasePrompt.includes(metric.toLowerCase())
@@ -254,6 +264,17 @@ export function ChartShowcase() {
     };
 
     setExperiments([...experiments, newExperiment]);
+
+    // **Update company events to add a funnel step**
+    companyEvents = companyEvents.map((event) => {
+      if (metricsToImprove.includes(event.metric)) {
+        const changeAmount = event.value * percentageChange;
+        event.value = isIncrease
+          ? event.value + changeAmount
+          : event.value - changeAmount;
+      }
+      return event;
+    });
 
     // Reset popover inputs
     setCustomPrompt("");
@@ -380,7 +401,8 @@ Provide a JSON object with the following structure:
 **Company Data Events:** ${JSON.stringify(companyEvents)}
 **Company Metadata:** ${companyMetadata}
 **Company Website:** ${companyWebsite}
-USE COMPANY METADATA WHICH IS WEBSITE MARKDOWN TO GENERATE PERSONALIZED INSIGHTS FOR EACH COMPANY BASED ON THE WEBSITE TOO. IN THE ACTION STEPS YOU SHOULD MENTION THE COMPANY NAME AND THE WEBSITE URL AND ALSO SOME FEATURES FROM THE INSIGHT.
+USE COMPANY METADATA WHICH IS WEBSITE MARKDOWN TO GENERATE PERSONALIZED INSIGHTS FOR EACH COMPANY BASED ON THE WEBSITE TOO. IN THE ACTION STEPS YOU SHOULD MENTION THE COMPANY NAME AND THE WEBSITE URL AND ALSO SOME FEATURES FROM THE INSIGHT. 
+MAKE SURE FOR ACTIONABLE INSIGHTS YOU SHOULD REFER ON THE EXISTING AND NEW EVENTS THAT YOU GENERATED AND MENTION THE IMPACT THAT YOU WANT TO ACHIEVE WITH ALL NUMBERS AND FACTS!!!!!
 `;
   };
 
@@ -398,7 +420,7 @@ USE COMPANY METADATA WHICH IS WEBSITE MARKDOWN TO GENERATE PERSONALIZED INSIGHTS
     // Find the corresponding experiment from the experiments array
     const experiment = experiments.find((exp) => exp.id === experimentId);
     const app = new FirecrawlApp({
-      apiKey: "fc-519d4eb4aace466b8b1d01c9ad56d851",
+      apiKey: process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY,
     });
 
     // Extract the improveArea from the experiment's insight
@@ -668,25 +690,38 @@ USE COMPANY METADATA WHICH IS WEBSITE MARKDOWN TO GENERATE PERSONALIZED INSIGHTS
     );
   }
 
+  // **Modify the CompanyEventsCellRenderer to include the funnel chart**
   const CompanyEventsCellRenderer = (props: ICellRendererParams) => {
     const { value } = props;
-    const companyEventss = companyEvents.filter(
+    const companySpecificEvents = companyEvents.filter(
       (event) => event.companyName === value
     );
+
+    const [showPopover, setShowPopover] = useState(false);
+
     return (
       <>
-        <Popover>
+        <Popover open={showPopover} onOpenChange={setShowPopover}>
           <PopoverTrigger asChild>
-            <div>{value}</div>
+            <div
+              className="cursor-pointer text-blue-600 underline"
+              onClick={() => setShowPopover(true)}
+            >
+              {value}
+            </div>
           </PopoverTrigger>
           <PopoverContent>
             <Card>
               <CardHeader>
-                <CardTitle>{value}</CardTitle>
+                <CardTitle>{value} - Funnel</CardTitle>
               </CardHeader>
               <CardContent>
-                <ul>
-                  {companyEventss.map((event, idx) => (
+                <CompanyFunnelChart
+                  companyName={value}
+                  events={companySpecificEvents}
+                />
+                <ul className="mt-4">
+                  {companySpecificEvents.map((event, idx) => (
                     <li key={idx}>{event.description}</li>
                   ))}
                 </ul>
@@ -938,9 +973,9 @@ USE COMPANY METADATA WHICH IS WEBSITE MARKDOWN TO GENERATE PERSONALIZED INSIGHTS
       {/* Display Company Events */}
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle>Company Events</CardTitle>
+          <CardTitle>Company Funnels</CardTitle>
           <CardDescription>
-            Click on a company name to view their events.
+            Click on a company name to view their funnel.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -948,18 +983,33 @@ USE COMPANY METADATA WHICH IS WEBSITE MARKDOWN TO GENERATE PERSONALIZED INSIGHTS
             <div key={company} className="mb-6">
               <Popover>
                 <PopoverTrigger asChild>
-                  <h3 className="text-lg font-semibold mb-2 cursor-pointer">
+                  <h3 className="text-lg font-semibold mb-2 cursor-pointer text-blue-600 underline">
                     {company}
                   </h3>
                 </PopoverTrigger>
-                <PopoverContent className="w-96 max-h-96 overflow-y-auto p-4">
-                  <ul className="list-disc pl-5">
-                    {eventsByCompany[company].map((event, index) => (
-                      <li key={index} className="mb-2">
-                        {event.description}
-                      </li>
-                    ))}
-                  </ul>
+                <PopoverContent className="w-full max-w-lg p-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{company} - Funnel</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <CompanyFunnelChart
+                        companyName={company}
+                        events={companyEvents.filter(
+                          (event) => event.companyName === company
+                        )}
+                      />
+                      <ul className="mt-4">
+                        {companyEvents
+                          .filter((event) => event.companyName === company)
+                          .map((event, index) => (
+                            <li key={index} className="mb-2">
+                              {event.description}
+                            </li>
+                          ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
                 </PopoverContent>
               </Popover>
             </div>
