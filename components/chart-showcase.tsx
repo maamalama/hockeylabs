@@ -30,6 +30,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { zodResponseFormat } from "openai/helpers/zod";
+import FirecrawlApp, {
+  CrawlParams,
+  CrawlStatusResponse,
+} from "@mendable/firecrawl-js";
 
 // Import Heroicons for icons
 import { PlayIcon } from "@heroicons/react/24/outline";
@@ -37,6 +41,7 @@ import { PlayIcon } from "@heroicons/react/24/outline";
 // Type definitions
 type CompanyData = {
   name: string;
+  website?: string;
   [key: string]: any;
   originalContent?: string;
 };
@@ -45,27 +50,27 @@ type CompanyDataEvent = {
   companyName: string;
   metric: string;
   value: number;
-  percentageChange: number;
   description: string;
 };
 
 // Original data
 const originalData: CompanyData[] = [
   {
-    name: "Pied Piper",
+    name: "OpenAI",
+    website: "https://www.openai.com/",
     originalContent: "This is the original output for Pied Piper.",
     impressions: 249,
     engagements: 88,
     intentScore: 93,
     sessions: 166,
     engagementRate: 26,
-    sessionDuration: 59, // Converted to number (seconds)
+    sessionDuration: 59, // Converted to seconds
     conversions: 15,
     bounceRate: 45,
     revenue: 15000,
   },
   {
-    name: "Hooli",
+    name: "Github",
     originalContent: "This is the original output for Hooli.",
     impressions: 500,
     engagements: 200,
@@ -96,8 +101,8 @@ const originalData: CompanyData[] = [
 // List of companies
 const companies = originalData.map((company) => company.name);
 
-// List of metrics (ensure they match your data)
-const metrics = [
+// List of all available metrics (if needed elsewhere)
+const allMetrics = [
   "impressions",
   "engagements",
   "intentScore",
@@ -108,28 +113,51 @@ const metrics = [
   "revenue",
 ];
 
-// Generating synthetic events
+// List of user acquisition events
+const companyEventNames = [
+  "Sign Up",
+  "Sign In",
+  "Purchase",
+  "Add to Cart",
+  "Checkout",
+  "Request Demo",
+  "Start Trial",
+  "Subscribe",
+  "Unsubscribe",
+  "Upgrade Plan",
+  "Downgrade Plan",
+  "Contact Support",
+  "Submit Feedback",
+  "Refer Friend",
+  "Download",
+  "Install Extension",
+  "Complete Onboarding",
+  "Abandon Cart",
+  "View Pricing",
+  "Visit Landing Page",
+];
+
+// Generating synthetic events with counts
 const generateCompanyEvents = () => {
   const events: CompanyDataEvent[] = [];
 
   companies.forEach((company) => {
     for (let i = 0; i < 10; i++) {
-      // Randomly select a metric
-      const metric = metrics[Math.floor(Math.random() * metrics.length)];
+      // Randomly select an event name
+      const eventName =
+        companyEventNames[Math.floor(Math.random() * companyEventNames.length)];
 
-      // Generate random values
-      const value = Math.floor(Math.random() * 1000);
-      const percentageChange = parseFloat((Math.random() * 20 - 10).toFixed(2));
-      const description = `Event ${
-        i + 1
-      } for ${company}: ${metric} changed by ${percentageChange}%`;
+      // Generate a random count for the event
+      const count = Math.floor(Math.random() * 20) + 1; // Random count between 1 and 20
+
+      // Create the event description
+      const description = `${count} ${eventName}${count > 1 ? "s" : ""}`;
 
       // Create the event object
       const event: CompanyDataEvent = {
         companyName: company,
-        metric,
-        value,
-        percentageChange,
+        metric: eventName,
+        value: count,
         description,
       };
 
@@ -141,7 +169,7 @@ const generateCompanyEvents = () => {
   return events;
 };
 
-// Synthetic dataset
+// Synthetic dataset with updated events
 const companyEvents = generateCompanyEvents();
 
 export function ChartShowcase() {
@@ -276,6 +304,7 @@ export function ChartShowcase() {
         value: z.number(),
         percentageChange: z.number(),
         description: z.string(),
+        actionSteps: z.array(z.string()), // New field for action steps
         newCompanyEvents: z.array(
           z.object({
             companyName: z.string(),
@@ -291,47 +320,68 @@ export function ChartShowcase() {
 
   type ActionableInsightResponse = z.infer<typeof ZActionableInsightResponse>;
 
-  const promtForInsights = (
+  const promptForInsights = (
     companyEvents: CompanyDataEvent[],
     improveArea: string,
-    companyMetadata: string
+    companyMetadata: string,
+    companyWebsite: string
   ): string => {
     return `
-    Generate actionable insights for account-based marketing (ABM) data to help specific companies improve targeted metrics. 
-    You will be provided with company data events, improvement area prompts, and selected metrics that the company wants to enhance.
+Generate actionable insights for account-based marketing (ABM) data to help specific companies improve targeted metrics. 
+You will be provided with company data events, an improvement area prompt, and selected metrics that the company wants to enhance.
 
-    # Steps
+# Instructions
 
-    1. **Analyze Provided Data:** Review the provided company data events and the specified improvement areas.
-    2. **Identify Connections:** Determine how these data events relate to the specific metrics the company aims to improve.
-    3. **Generate Insights:** Develop actionable insights that align with improving the targeted metrics. Consider current industry trends and best practices.
-    4. **Modify Data Events:** Suggest modifications to the current company data events to achieve desired improvements in the metrics.
+- **Analyze Provided Data:** Review the provided company data events and the specified improvement areas.
+- **Identify Connections:** Determine how these data events relate to the specific metrics the company aims to improve.
+- **Generate Insights:** Develop actionable insights that align with improving the targeted metrics. Consider current industry trends and best practices.
+- **Specify Action Steps:** For each insight, list specific steps the company can take to achieve the desired improvements.
+- **Modify Data Events:** Suggest modifications to the current company data events to achieve desired improvements in the metrics.
 
-    # Output Format
+# Output Format
 
-    Provide an array of insights with corresponding modified company data events necessary to improve the specific metric. Each insight should include:
-    - A brief description of the insight.
-    - The specific data event changes or initiatives required.
-    - The expected impact on the targeted metric.
+Provide a JSON object with the following structure:
 
-    # Examples
+\`\`\`json
+{
+  "insights": [
+    {
+      "metric": "string",
+      "insight": "string",
+      "increase": boolean,
+      "value": number,
+      "percentageChange": number,
+      "description": "string",
+      "actionSteps": ["string", "string", ...],
+      "newCompanyEvents": [
+        {
+          "companyName": "string",
+          "metric": "string",
+          "value": number,
+          "percentageChange": number,
+          "description": "string"
+        },
+        ...
+      ]
+    },
+    ...
+  ]
+}
+\`\`\`
 
-    **Input:**
-    - Company Data Events: [Placeholder for specific events]
-    - Improvement Area Prompt: [Placeholder for prompts such as "increase conversion rate"]
-    - Selected Metrics: "Conversion Rate"
+# Notes
 
-    # Notes
+- Ensure insights are directly applicable and realistic with the company's resources.
+- Action steps should be practical and directly related to improving the targeted metric.
+- Use the company metadata to provide contextually relevant suggestions.
+- Do **not** include any additional text outside of the JSON object.
 
-    - Ensure insights are directly applicable and realistic with specified company resources.
-    - Consider scalability and long-term sustainability of suggested data event changes.
-    - Address potential challenges and solutions related to data modifications.
-
-    **Improvement Area Prompt:** ${improveArea}
-    **Company Data Events:** ${JSON.stringify(companyEvents)}
-
-    IDEA IS YOU NEED TO GENERATE A NEW SET OF COMPANY EVENTS THAT ARE MORE ACTIONABLE AND MEANINGFUL AND GIVE A INSIGHT WHICH ACTIONS COULD BE TAKEN TO IMPROVE THE METRIC. AND YOU HAVE TO CHANGE THE VALUE OF THE METRIC THAT WE ONLY NEED TO ACHIEVE THE IMPACT THAT WE WANTED.
-  `;
+**Improvement Area Prompt:** ${improveArea}
+**Company Data Events:** ${JSON.stringify(companyEvents)}
+**Company Metadata:** ${companyMetadata}
+**Company Website:** ${companyWebsite}
+USE COMPANY METADATA WHICH IS WEBSITE MARKDOWN TO GENERATE PERSONALIZED INSIGHTS FOR EACH COMPANY BASED ON THE WEBSITE TOO. IN THE ACTION STEPS YOU SHOULD MENTION THE COMPANY NAME AND THE WEBSITE URL AND ALSO SOME FEATURES FROM THE INSIGHT.
+`;
   };
 
   // Updated ExperimentCellRenderer function
@@ -347,6 +397,9 @@ export function ChartShowcase() {
 
     // Find the corresponding experiment from the experiments array
     const experiment = experiments.find((exp) => exp.id === experimentId);
+    const app = new FirecrawlApp({
+      apiKey: "fc-519d4eb4aace466b8b1d01c9ad56d851",
+    });
 
     // Extract the improveArea from the experiment's insight
     const improveArea = experiment?.insight || "";
@@ -370,8 +423,29 @@ export function ChartShowcase() {
         (event) => event.companyName === companyName
       );
 
+      const company = experiments[0].data.find(
+        (company) => company.name === companyName
+      );
+
+      let website = company?.website || "https://github.com/";
+
+      const scrapeResponse = await app.scrapeUrl(website, {
+        formats: ["markdown"],
+      });
+      console.log(scrapeResponse);
+      let companyData = "";
+      if (!scrapeResponse.success) {
+        companyData = "";
+      }
+      companyData = JSON.stringify(scrapeResponse);
+
       // Prepare the prompt using the correct improveArea
-      const prompt = promtForInsights(companySpecificEvents, improveArea);
+      const prompt = promptForInsights(
+        companySpecificEvents,
+        improveArea,
+        JSON.stringify(companyData),
+        website
+      );
 
       try {
         // Call your OpenAI API function
@@ -533,35 +607,45 @@ export function ChartShowcase() {
                   </span>
                 </h3>
                 <p>{insight.description}</p>
-                {recommendedAction && (
+                {insight.actionSteps && insight.actionSteps.length > 0 && (
                   <>
-                    <h4 className="font-semibold">Recommended Action:</h4>
-                    <p>{recommendedAction.description}</p>
+                    <h4 className="font-semibold">Action Steps:</h4>
+                    <ol className="list-decimal pl-5 space-y-1">
+                      {insight.actionSteps.map((step, idx) => (
+                        <li key={idx}>{step}</li>
+                      ))}
+                    </ol>
                   </>
                 )}
                 {/* Display comparison of original and new events */}
-                <h4 className="font-semibold">Event Changes:</h4>
-                <ul>
-                  {comparedEvents.map((event, idx) => (
-                    <li key={idx} className="mb-2">
-                      <strong>{event.metric}</strong>
-                      <div>
-                        <span className="text-sm text-gray-600">Original:</span>{" "}
-                        {event.originalValue}
-                      </div>
-                      <div>
-                        <span className="text-sm text-gray-600">New:</span>{" "}
-                        {event.newValue}
-                      </div>
-                      <div>
-                        <span className="text-sm text-gray-600">
-                          Difference:
-                        </span>{" "}
-                        {event.difference.toFixed(2)}%
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                {comparedEvents.length > 0 && (
+                  <>
+                    <h4 className="font-semibold">Event Changes:</h4>
+                    <ul>
+                      {comparedEvents.map((event, idx) => (
+                        <li key={idx} className="mb-2">
+                          <strong>{event.metric}</strong>
+                          <div>
+                            <span className="text-sm text-gray-600">
+                              Original:
+                            </span>{" "}
+                            {event.originalValue}
+                          </div>
+                          <div>
+                            <span className="text-sm text-gray-600">New:</span>{" "}
+                            {event.newValue}
+                          </div>
+                          <div>
+                            <span className="text-sm text-gray-600">
+                              Difference:
+                            </span>{" "}
+                            {event.difference.toFixed(2)}%
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
               </div>
             ) : isLoading ? (
               <div className="animate-pulse text-gray-500">
@@ -603,9 +687,7 @@ export function ChartShowcase() {
               <CardContent>
                 <ul>
                   {companyEventss.map((event, idx) => (
-                    <li key={idx}>
-                      <strong>{event.metric}</strong>: {event.description}
-                    </li>
+                    <li key={idx}>{event.description}</li>
                   ))}
                 </ul>
               </CardContent>
@@ -775,7 +857,6 @@ export function ChartShowcase() {
       company: event.companyName,
       metric: event.metric,
       value: event.value,
-      percentageChange: event.percentageChange,
       description: event.description,
     }));
     return formattedData;
@@ -845,7 +926,6 @@ export function ChartShowcase() {
         </CardContent>
       </Card>
 
-      {/* Display Improvement Prompts */}
       {experiments.slice(1).map((exp) => (
         <Card key={exp.id} className="mb-4">
           <CardHeader>
@@ -876,7 +956,7 @@ export function ChartShowcase() {
                   <ul className="list-disc pl-5">
                     {eventsByCompany[company].map((event, index) => (
                       <li key={index} className="mb-2">
-                        <strong>{event.metric}</strong>: {event.description}
+                        {event.description}
                       </li>
                     ))}
                   </ul>

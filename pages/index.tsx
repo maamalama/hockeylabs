@@ -18,7 +18,7 @@ const geistMono = localFont({
 
 export default function Home() {
   return (
-    <div>
+    <div className="bg-white">
       <ChartShowcase />
     </div>
   );
