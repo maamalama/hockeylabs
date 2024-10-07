@@ -293,7 +293,8 @@ export function ChartShowcase() {
 
   const promtForInsights = (
     companyEvents: CompanyDataEvent[],
-    improveArea: string
+    improveArea: string,
+    companyMetadata: string
   ): string => {
     return `
     Generate actionable insights for account-based marketing (ABM) data to help specific companies improve targeted metrics. 
@@ -329,12 +330,12 @@ export function ChartShowcase() {
     **Improvement Area Prompt:** ${improveArea}
     **Company Data Events:** ${JSON.stringify(companyEvents)}
 
-    IDEA IS YOU NEED TO GENERATE A NEW SET OF COMPANY EVENTS THAT ARE MORE ACTIONABLE AND MEANINGFUL AND GIVE A INSIGHT WHICH ACTIONS COULD BE TAKEN TO IMPROVE THE METRIC
+    IDEA IS YOU NEED TO GENERATE A NEW SET OF COMPANY EVENTS THAT ARE MORE ACTIONABLE AND MEANINGFUL AND GIVE A INSIGHT WHICH ACTIONS COULD BE TAKEN TO IMPROVE THE METRIC. AND YOU HAVE TO CHANGE THE VALUE OF THE METRIC THAT WE ONLY NEED TO ACHIEVE THE IMPACT THAT WE WANTED.
   `;
   };
 
   // Updated ExperimentCellRenderer function
-  const ExperimentCellRenderer = (props: ICellRendererParams) => {
+  function ExperimentCellRenderer(props: ICellRendererParams) {
     const { value, data, colDef } = props;
     const [showPopover, setShowPopover] = useState(false);
     const [cellContent, setCellContent] =
@@ -472,6 +473,40 @@ export function ChartShowcase() {
     const recommendedAction = insight?.newCompanyEvents?.[0] || null;
     const newCompanyEvents = insight?.newCompanyEvents || null;
 
+    // Get original events for the company
+    const originalCompanyEvents = companyEvents.filter(
+      (event) => event.companyName === data.name
+    );
+
+    // Function to compare original and new events
+    const compareEvents = () => {
+      if (!newCompanyEvents || !originalCompanyEvents) return [];
+
+      // For simplicity, use metric as the key to compare events
+      const originalEventsMap = originalCompanyEvents.reduce((acc, event) => {
+        acc[event.metric] = event;
+        return acc;
+      }, {} as { [key: string]: CompanyDataEvent });
+
+      return newCompanyEvents.map((newEvent) => {
+        const originalEvent = originalEventsMap[newEvent.metric];
+        return {
+          metric: newEvent.metric,
+          originalDescription: originalEvent
+            ? originalEvent.description
+            : "N/A",
+          originalValue: originalEvent ? originalEvent.value : "N/A",
+          newDescription: newEvent.description,
+          newValue: newEvent.value,
+          difference:
+            newEvent.percentageChange - (originalEvent?.percentageChange || 0),
+        };
+      });
+    };
+
+    // Get the compared events
+    const comparedEvents = compareEvents();
+
     return (
       <Popover open={showPopover} onOpenChange={setShowPopover}>
         <PopoverTrigger asChild>
@@ -504,16 +539,29 @@ export function ChartShowcase() {
                     <p>{recommendedAction.description}</p>
                   </>
                 )}
-                {newCompanyEvents && (
-                  <>
-                    <h4 className="font-semibold">New Company Events:</h4>
-                    <ul>
-                      {newCompanyEvents.map((event, idx) => (
-                        <li key={idx}>{event.description}</li>
-                      ))}
-                    </ul>
-                  </>
-                )}
+                {/* Display comparison of original and new events */}
+                <h4 className="font-semibold">Event Changes:</h4>
+                <ul>
+                  {comparedEvents.map((event, idx) => (
+                    <li key={idx} className="mb-2">
+                      <strong>{event.metric}</strong>
+                      <div>
+                        <span className="text-sm text-gray-600">Original:</span>{" "}
+                        {event.originalValue}
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-600">New:</span>{" "}
+                        {event.newValue}
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-600">
+                          Difference:
+                        </span>{" "}
+                        {event.difference.toFixed(2)}%
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : isLoading ? (
               <div className="animate-pulse text-gray-500">
@@ -534,7 +582,7 @@ export function ChartShowcase() {
         </PopoverContent>
       </Popover>
     );
-  };
+  }
 
   const CompanyEventsCellRenderer = (props: ICellRendererParams) => {
     const { value } = props;
