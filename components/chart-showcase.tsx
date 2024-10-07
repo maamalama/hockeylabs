@@ -160,6 +160,7 @@ export function ChartShowcase() {
   const [columnOrder, setColumnOrder] = useState<string[]>([]);
   const [gridApi, setGridApi] = useState<any>(null);
 
+  // List of all available metrics
   const allMetrics = [
     "impressions",
     "engagements",
@@ -171,7 +172,7 @@ export function ChartShowcase() {
     "revenue",
   ];
 
-  // State to hold selected metrics for display
+  // State to hold selected metrics
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(allMetrics);
 
   // Generate options for the multi-select component
@@ -292,8 +293,7 @@ export function ChartShowcase() {
 
   const promtForInsights = (
     companyEvents: CompanyDataEvent[],
-    improveArea: string,
-    selectedMetrics: string[]
+    improveArea: string
   ): string => {
     return `
     Generate actionable insights for account-based marketing (ABM) data to help specific companies improve targeted metrics. 
@@ -327,12 +327,13 @@ export function ChartShowcase() {
     - Address potential challenges and solutions related to data modifications.
 
     **Improvement Area Prompt:** ${improveArea}
-    **Selected Metrics:** ${selectedMetrics.join(", ")}
     **Company Data Events:** ${JSON.stringify(companyEvents)}
+
+    IDEA IS YOU NEED TO GENERATE A NEW SET OF COMPANY EVENTS THAT ARE MORE ACTIONABLE AND MEANINGFUL AND GIVE A INSIGHT WHICH ACTIONS COULD BE TAKEN TO IMPROVE THE METRIC
   `;
   };
 
-  // Custom Cell Renderer for Experiments
+  // Updated ExperimentCellRenderer function
   const ExperimentCellRenderer = (props: ICellRendererParams) => {
     const { value, data, colDef } = props;
     const [showPopover, setShowPopover] = useState(false);
@@ -369,11 +370,7 @@ export function ChartShowcase() {
       );
 
       // Prepare the prompt using the correct improveArea
-      const prompt = promtForInsights(
-        companySpecificEvents,
-        improveArea,
-        selectedMetrics
-      );
+      const prompt = promtForInsights(companySpecificEvents, improveArea);
 
       try {
         // Call your OpenAI API function
@@ -441,7 +438,24 @@ export function ChartShowcase() {
         const insight = cellContent.insights[0];
         const changeDirection = insight.increase ? "↑" : "↓";
         const percentage = `${Math.abs(insight.percentageChange)}%`;
-        return `${insight.metric}: ${changeDirection} ${percentage}`;
+
+        // Get original value for the metric
+        const originalDataEntry = experiments[0].data.find(
+          (company) => company.name === data.name
+        );
+        const originalValue = originalDataEntry
+          ? originalDataEntry[insight.metric]
+          : null;
+
+        if (originalValue != null) {
+          const deltaValue = insight.value - originalValue;
+          const deltaValueFormatted =
+            deltaValue > 0 ? `+${deltaValue}` : `${deltaValue}`;
+
+          return `${insight.metric}: ${changeDirection} ${deltaValueFormatted} (${percentage})`;
+        } else {
+          return `${insight.metric}: ${changeDirection} (${percentage})`;
+        }
       } else if (isLoading) {
         return <div className="animate-pulse text-gray-500">Loading...</div>;
       } else {
@@ -451,7 +465,12 @@ export function ChartShowcase() {
           </Button>
         );
       }
-    }, [cellContent, isLoading]);
+    }, [cellContent, isLoading, experiments, data.name]);
+
+    // Extract the first insight and first recommended action
+    const insight = cellContent?.insights?.[0] || null;
+    const recommendedAction = insight?.newCompanyEvents?.[0] || null;
+    const newCompanyEvents = insight?.newCompanyEvents || null;
 
     return (
       <Popover open={showPopover} onOpenChange={setShowPopover}>
@@ -465,34 +484,37 @@ export function ChartShowcase() {
         </PopoverTrigger>
         <PopoverContent className="w-96 p-4">
           <div className="flex flex-col space-y-4">
-            {cellContent ? (
-              cellContent.insights.map((insight, index) => (
-                <div key={index} className="space-y-2">
-                  <h3 className="text-lg font-semibold">
-                    {insight.metric}:{" "}
-                    <span
-                      className={`${
-                        insight.increase ? "text-green-600" : "text-red-600"
-                      } font-bold`}
-                    >
-                      {insight.increase ? "↑" : "↓"}{" "}
-                      {Math.abs(insight.percentageChange)}%
-                    </span>
-                  </h3>
-                  <p>{insight.description}</p>
-                  {insight.newCompanyEvents &&
-                    insight.newCompanyEvents.length > 0 && (
-                      <>
-                        <h4 className="font-semibold">Recommended Actions:</h4>
-                        <ul className="list-disc pl-5">
-                          {insight.newCompanyEvents.map((event, idx) => (
-                            <li key={idx}>{event.description}</li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
-                </div>
-              ))
+            {insight ? (
+              <div className="space-y-2">
+                <h3 className="text-lg font-semibold">
+                  {insight.metric}:{" "}
+                  <span
+                    className={`${
+                      insight.increase ? "text-green-600" : "text-red-600"
+                    } font-bold`}
+                  >
+                    {insight.increase ? "↑" : "↓"}{" "}
+                    {Math.abs(insight.percentageChange)}%
+                  </span>
+                </h3>
+                <p>{insight.description}</p>
+                {recommendedAction && (
+                  <>
+                    <h4 className="font-semibold">Recommended Action:</h4>
+                    <p>{recommendedAction.description}</p>
+                  </>
+                )}
+                {newCompanyEvents && (
+                  <>
+                    <h4 className="font-semibold">New Company Events:</h4>
+                    <ul>
+                      {newCompanyEvents.map((event, idx) => (
+                        <li key={idx}>{event.description}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
             ) : isLoading ? (
               <div className="animate-pulse text-gray-500">
                 Generating insights...
